@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scratch Ticket</title>
+    <style>
+        body {
+            background: #1e1e1e;
+            color: white;
+            text-align: center;
+            font-family: Arial;
+            margin-top: 50px;
+        }
+
+        canvas {
+            margin-top: 20px;
+            border-radius: 12px;
+            cursor: crosshair;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        #result {
+            margin-top: 20px;
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        #footer {
+            margin-top: 40px;
+            font-size: 14px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Scratch Ticket ($500)</h1>
+
+<canvas id="canvas" width="300" height="150"></canvas>
+
+<div id="result"></div>
+
+<div id="footer">
+    Provided by "Woolie's Gas Station"
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+// ===== SOUND (FIXED) =====
+const scratchSound = new Audio("https://actions.google.com/sounds/v1/foley/scrape_1.ogg");
+scratchSound.volume = 0.15;
+scratchSound.loop = false;
+
+let lastSoundTime = 0;
+
+function playScratchSound() {
+    const now = Date.now();
+    if (now - lastSoundTime < 60) return; // throttle
+    lastSoundTime = now;
+
+    scratchSound.currentTime = 0;
+    scratchSound.play().catch(() => {});
+}
+
+function playWinSound() {
+    new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg").play();
+}
+function playLoseSound() {
+    new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg").play();
+}
+
+// ===== ODDS =====
+let roll = Math.random() * 100;
+let winnings = 0;
+
+if (roll < 60) winnings = 0;
+else if (roll < 80) winnings = 1000;
+else if (roll < 92) winnings = 2500;
+else winnings = 5000;
+
+let finalText = winnings > 0 ? "YOU WIN $" + winnings : "YOU LOSE";
+
+// ===== COVER LAYER =====
+const coverCanvas = document.createElement("canvas");
+coverCanvas.width = canvas.width;
+coverCanvas.height = canvas.height;
+const coverCtx = coverCanvas.getContext("2d");
+
+// ===== DUST =====
+const particles = [];
+
+function spawnDust(x, y) {
+    for (let i = 0; i < 2; i++) {
+        particles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 2,
+            vy: (Math.random() - 0.5) * 2,
+            life: 25
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+
+        ctx.fillStyle = `rgba(255,255,255,${p.life / 25})`;
+        ctx.fillRect(p.x, p.y, 2, 2);
+
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+
+// ===== SCRATCH TRACKING =====
+let isDrawing = false;
+let scratched = 0;
+let total = 0;
+let revealed = false;
+
+const gridSize = 10;
+const grid = [];
+
+for (let x = 0; x < canvas.width; x += gridSize) {
+    for (let y = 0; y < canvas.height; y += gridSize) {
+        grid.push({x, y, scratched: false});
+        total++;
+    }
+}
+
+// ===== PRIZE =====
+function drawPrize() {
+    ctx.globalCompositeOperation = "source-over";
+
+    ctx.fillStyle = "#111";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = winnings > 0 ? "#00ff88" : "#ff4444";
+    ctx.font = "bold 40px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(finalText, canvas.width / 2, canvas.height / 2 + 10);
+}
+
+// ===== REALISTIC SCRATCH COVER =====
+function drawCover() {
+    const g = coverCtx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    g.addColorStop(0, "#c0c0c0");
+    g.addColorStop(0.5, "#e0e0e0");
+    g.addColorStop(1, "#a8a8a8");
+
+    coverCtx.fillStyle = g;
+    coverCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // subtle pattern dots
+    for (let x = 0; x < canvas.width; x += 12) {
+        for (let y = 0; y < canvas.height; y += 12) {
+            coverCtx.fillStyle = "rgba(255,255,255,0.08)";
+            coverCtx.fillRect(x, y, 2, 2);
+        }
+    }
+
+    // glossy highlight
+    const shine = coverCtx.createLinearGradient(0, 0, canvas.width, 0);
+    shine.addColorStop(0, "rgba(255,255,255,0.0)");
+    shine.addColorStop(0.5, "rgba(255,255,255,0.25)");
+    shine.addColorStop(1, "rgba(255,255,255,0.0)");
+
+    coverCtx.fillStyle = shine;
+    coverCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    coverCtx.fillStyle = "white";
+    coverCtx.font = "20px Arial";
+    coverCtx.textAlign = "center";
+    coverCtx.fillText("Scratch Here", canvas.width / 2, canvas.height / 2);
+}
+
+drawCover();
+
+// ===== RENDER LOOP =====
+function render() {
+    drawPrize();
+    ctx.drawImage(coverCanvas, 0, 0);
+    updateParticles();
+    requestAnimationFrame(render);
+}
+render();
+
+// ===== REVEAL =====
+function checkReveal() {
+    if (revealed) return;
+
+    if (scratched / total >= 0.5) {
+        revealed = true;
+        coverCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+        document.getElementById("result").innerText = finalText;
+
+        if (winnings > 0) playWinSound();
+        else playLoseSound();
+    }
+}
+
+// ===== SCRATCH =====
+canvas.addEventListener("mousedown", () => isDrawing = true);
+canvas.addEventListener("mouseup", () => isDrawing = false);
+canvas.addEventListener("mouseleave", () => isDrawing = false);
+
+canvas.addEventListener("mousemove", (e) => {
+    if (!isDrawing || revealed) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    coverCtx.globalCompositeOperation = "destination-out";
+    coverCtx.beginPath();
+    coverCtx.arc(x, y, 25, 0, Math.PI * 2);
+    coverCtx.fill();
+
+    playScratchSound();
+    spawnDust(x, y);
+
+    grid.forEach(cell => {
+        if (!cell.scratched) {
+            const dx = cell.x - x;
+            const dy = cell.y - y;
+            if (dx * dx + dy * dy < 25 * 25) {
+                cell.scratched = true;
+                scratched++;
+            }
+        }
+    });
+
+    checkReveal();
+});
+</script>
+
+</body>
+</html>
