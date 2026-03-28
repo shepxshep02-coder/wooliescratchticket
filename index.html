@@ -47,17 +47,61 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-// ===== SOUND (FIXED) =====
+// =====================
+// 🎟️ TICKET SYSTEM
+// =====================
+function getTicketId() {
+    const params = new URLSearchParams(window.location.search);
+    let id = params.get("ticket");
+
+    if (!id) {
+        id = Math.random().toString(36).substring(2, 10).toUpperCase();
+        window.history.replaceState({}, "", "?ticket=" + id);
+    }
+
+    return id;
+}
+
+const ticketId = getTicketId();
+const storageKey = "scratch_ticket_" + ticketId;
+
+// =====================
+// 🔒 ONE TIME RESULT
+// =====================
+let saved = localStorage.getItem(storageKey);
+
+let winnings = 0;
+let revealed = false;
+
+if (saved) {
+    winnings = JSON.parse(saved).winnings;
+    revealed = true;
+} else {
+    let roll = Math.random() * 100;
+
+    if (roll < 60) winnings = 0;
+    else if (roll < 80) winnings = 1000;
+    else if (roll < 92) winnings = 2500;
+    else winnings = 5000;
+
+    localStorage.setItem(storageKey, JSON.stringify({
+        winnings: winnings,
+        used: true
+    }));
+}
+
+// =====================
+// 🔊 SOUNDS
+// =====================
 const scratchSound = new Audio("https://actions.google.com/sounds/v1/foley/scrape_1.ogg");
 scratchSound.volume = 0.15;
-scratchSound.loop = false;
 
-let lastSoundTime = 0;
+let lastSound = 0;
 
 function playScratchSound() {
     const now = Date.now();
-    if (now - lastSoundTime < 60) return; // throttle
-    lastSoundTime = now;
+    if (now - lastSound < 60) return;
+    lastSound = now;
 
     scratchSound.currentTime = 0;
     scratchSound.play().catch(() => {});
@@ -66,34 +110,21 @@ function playScratchSound() {
 function playWinSound() {
     new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg").play();
 }
+
 function playLoseSound() {
     new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg").play();
 }
 
-// ===== ODDS =====
-let roll = Math.random() * 100;
-let winnings = 0;
-
-if (roll < 60) winnings = 0;
-else if (roll < 80) winnings = 1000;
-else if (roll < 92) winnings = 2500;
-else winnings = 5000;
-
-let finalText = winnings > 0 ? "YOU WIN $" + winnings : "YOU LOSE";
-
-// ===== COVER LAYER =====
-const coverCanvas = document.createElement("canvas");
-coverCanvas.width = canvas.width;
-coverCanvas.height = canvas.height;
-const coverCtx = coverCanvas.getContext("2d");
-
-// ===== DUST =====
+// =====================
+// 💨 DUST PARTICLES
+// =====================
 const particles = [];
 
 function spawnDust(x, y) {
     for (let i = 0; i < 2; i++) {
         particles.push({
-            x, y,
+            x,
+            y,
             vx: (Math.random() - 0.5) * 2,
             vy: (Math.random() - 0.5) * 2,
             life: 25
@@ -115,11 +146,20 @@ function updateParticles() {
     }
 }
 
-// ===== SCRATCH TRACKING =====
+// =====================
+// 🧾 COVER CANVAS
+// =====================
+const coverCanvas = document.createElement("canvas");
+coverCanvas.width = canvas.width;
+coverCanvas.height = canvas.height;
+const coverCtx = coverCanvas.getContext("2d");
+
+// =====================
+// 🎯 SCRATCH TRACKING
+// =====================
 let isDrawing = false;
 let scratched = 0;
 let total = 0;
-let revealed = false;
 
 const gridSize = 10;
 const grid = [];
@@ -131,7 +171,9 @@ for (let x = 0; x < canvas.width; x += gridSize) {
     }
 }
 
-// ===== PRIZE =====
+// =====================
+// 🎨 PRIZE DRAW
+// =====================
 function drawPrize() {
     ctx.globalCompositeOperation = "source-over";
 
@@ -141,10 +183,14 @@ function drawPrize() {
     ctx.fillStyle = winnings > 0 ? "#00ff88" : "#ff4444";
     ctx.font = "bold 40px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(finalText, canvas.width / 2, canvas.height / 2 + 10);
+
+    let text = winnings > 0 ? "YOU WIN $" + winnings : "YOU LOSE";
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 10);
 }
 
-// ===== REALISTIC SCRATCH COVER =====
+// =====================
+// 🎭 COVER DESIGN
+// =====================
 function drawCover() {
     const g = coverCtx.createLinearGradient(0, 0, canvas.width, canvas.height);
     g.addColorStop(0, "#c0c0c0");
@@ -154,22 +200,12 @@ function drawCover() {
     coverCtx.fillStyle = g;
     coverCtx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // subtle pattern dots
+    coverCtx.fillStyle = "rgba(255,255,255,0.08)";
     for (let x = 0; x < canvas.width; x += 12) {
         for (let y = 0; y < canvas.height; y += 12) {
-            coverCtx.fillStyle = "rgba(255,255,255,0.08)";
             coverCtx.fillRect(x, y, 2, 2);
         }
     }
-
-    // glossy highlight
-    const shine = coverCtx.createLinearGradient(0, 0, canvas.width, 0);
-    shine.addColorStop(0, "rgba(255,255,255,0.0)");
-    shine.addColorStop(0.5, "rgba(255,255,255,0.25)");
-    shine.addColorStop(1, "rgba(255,255,255,0.0)");
-
-    coverCtx.fillStyle = shine;
-    coverCtx.fillRect(0, 0, canvas.width, canvas.height);
 
     coverCtx.fillStyle = "white";
     coverCtx.font = "20px Arial";
@@ -179,7 +215,28 @@ function drawCover() {
 
 drawCover();
 
-// ===== RENDER LOOP =====
+// =====================
+// 🧠 REVEAL CHECK
+// =====================
+function checkReveal() {
+    if (revealed) return;
+
+    if (scratched / total >= 0.5) {
+        revealed = true;
+
+        coverCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+        document.getElementById("result").innerText =
+            winnings > 0 ? "You won $" + winnings : "You lost";
+
+        if (winnings > 0) playWinSound();
+        else playLoseSound();
+    }
+}
+
+// =====================
+// 🔁 RENDER LOOP
+// =====================
 function render() {
     drawPrize();
     ctx.drawImage(coverCanvas, 0, 0);
@@ -188,23 +245,14 @@ function render() {
 }
 render();
 
-// ===== REVEAL =====
-function checkReveal() {
+// =====================
+// ✋ SCRATCH INPUT
+// =====================
+canvas.addEventListener("mousedown", () => {
     if (revealed) return;
+    isDrawing = true;
+});
 
-    if (scratched / total >= 0.5) {
-        revealed = true;
-        coverCtx.clearRect(0, 0, canvas.width, canvas.height);
-
-        document.getElementById("result").innerText = finalText;
-
-        if (winnings > 0) playWinSound();
-        else playLoseSound();
-    }
-}
-
-// ===== SCRATCH =====
-canvas.addEventListener("mousedown", () => isDrawing = true);
 canvas.addEventListener("mouseup", () => isDrawing = false);
 canvas.addEventListener("mouseleave", () => isDrawing = false);
 
@@ -236,6 +284,8 @@ canvas.addEventListener("mousemove", (e) => {
 
     checkReveal();
 });
+
+// =====================
 </script>
 
 </body>
